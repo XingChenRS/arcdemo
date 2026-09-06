@@ -18,6 +18,7 @@
 #import "WHToast/WHToast.h"
 
 #include "XRCProfile.h"
+#include "XRCRuntime.h"
 #include "XRCClock.h"
 #include "XRCPlayer.h"
 #include "XRCGameplay.h"
@@ -515,6 +516,7 @@ static void doBootstrap(void) {
     dispatch_once(&once, ^{
         acc_flog(@"==== xrc-arcdemo tweak %@ doBootstrap begin ====", XRC_TWEAK_VERSION);
         uint64_t base = xrc_image_base();
+        g_xrc = xrc_runtime_discover();
         @try { initButton(); }       @catch (NSException *e) { acc_flog(@"initButton EX: %@", e); }
         @try { xrc_player_install(base); }      @catch (NSException *e) { acc_flog(@"player EX: %@", e); }
         @try { xrc_gameplay_install_hooks(base); } @catch (NSException *e) { acc_flog(@"gameplay EX: %@", e); }

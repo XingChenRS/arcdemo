@@ -39,9 +39,20 @@ STUB_TRAMP_VA   = 0x10146800C
 STUB_TRAMP_FILE = 0x146800C
 STUB_SLOT_VA    = 0x10164AB28
 STUB_SLOT_FILE  = 0x164AB28
+STUB_INFO_VA    = 0x10164AB38   # slot + 16
+STUB_INFO_FILE  = 0x164AB38
 # expected first 3 insns at entry (file byte order; verified in IDA dwords
 # d10103ff=a90157f6=a9024ff4 as SUB SP,#0x30 / STP X22,X21 / STP X20,X19):
 STUB_ENTRY_EXPECT = bytes.fromhex("ff0301d1f65701a9f44f02a9")
+
+XRC_MAGIC = 0x58424331  # 'XRC1'
+XRC_INFO_VERSION = 1
+
+# 静态偏移（VA - image base 0x100000000）
+GP_VTABLE_OFF   = 0x151D8C0   # GameScene vtable
+GP_UPDATE_OFF   = 0xCA7160    # 槽 103 每帧函数
+MTP_VTABLE_OFF  = 0x14B75B0   # MTP vtable
+MTP_GETPOS_OFF  = 0x8E24F0    # 槽 7
 
 
 def encode_adrp_add_br(pc_addr: int, dst: int, reg: int = 16) -> bytes:
@@ -94,6 +105,21 @@ def build_trampoline() -> bytes:
     return bytes(out)
 
 
+def build_info_blob() -> bytes:
+    """xrc_info 结构：magic + version + 6 个静态偏移 + reserved[8]。
+    dyld 不 rebase 零填充区（不在 rebase 列表），dylib 手动重定位。"""
+    fields = [
+        XRC_MAGIC, XRC_INFO_VERSION,
+        STUB_ENTRY_VA - 0x100000000,   # judge_entry_off
+        STUB_SLOT_VA - 0x100000000,    # judge_slot_off
+        GP_VTABLE_OFF,
+        GP_UPDATE_OFF,
+        MTP_VTABLE_OFF,
+        MTP_GETPOS_OFF,
+    ] + [0] * 8
+    return struct.pack("<II6Q8Q", *fields)
+
+
 def patch_judge_stub(data: bytearray) -> list[str]:
     logs = []
     base = fat_arm64_slice_offset(bytes(data))
@@ -120,6 +146,14 @@ def patch_judge_stub(data: bytearray) -> list[str]:
         raise RuntimeError(f"slot region not zero @ {slot_file:#x}")
     data[slot_file:slot_file + 16] = struct.pack("<QQ", 0, STUB_ENTRY_VA)
     logs.append(f"slot (16B) @ fileoff {slot_file:#x} (vm {STUB_SLOT_VA:#x})")
+
+    # info blob: 桩点回报信息（运行时锚点清单，dylib 手动重定位）
+    info = build_info_blob()
+    info_file = base + STUB_INFO_FILE
+    if bytes(data[info_file:info_file + len(info)]) != b"\0" * len(info):
+        raise RuntimeError(f"info region not zero @ {info_file:#x}")
+    data[info_file:info_file + len(info)] = info
+    logs.append(f"info blob ({len(info)}B) @ fileoff {info_file:#x} (vm {STUB_INFO_VA:#x})")
 
     # entry patch: ADRP/ADD/BR X16 -> trampoline
     patch = encode_adrp_add_br(STUB_ENTRY_VA, STUB_TRAMP_VA)

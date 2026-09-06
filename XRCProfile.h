@@ -36,9 +36,10 @@
 // 出处: 收敛版架构 spec §2（ABI 已确认：X0=note, X8=out_ptr, 无 sret）
 #define XRC_HAS_JUDGE_STUB          1
 #define XRC_JUDGE_STUB_ENTRY_OFF    (0x9D9ED8ULL)   // sub_1009D9ED8（判定区间求值器，表 B 消费点）
-// 注入器在 __DATA 零填充尾部（fileoff 0x164AB28，对齐 8）写入 slot；
-// 注入后回填此值（0 表示未打桩，dylib 静默降级）。
+// 注入器在 __DATA 零填充尾部（fileoff 0x164AB28，对齐 8）写入 slot + info blob；
+// 注入后 dylib 优先读 info blob（magic 校验），编译期偏移仅作 fallback。
 #define XRC_JUDGE_SLOT_OFF          (0x164AB28ULL)
+#define XRC_INFO_OFF                (0x164AB38ULL)    // slot 之后 16 字节，128 字节结构
 
 // note 字段（改判 handler 读；replay-chain 笔记 §3.2）
 #define XRC_NOTE_TYPE_OFF           28
@@ -59,7 +60,7 @@
 // 锚点链：6.13 RTTI 名 20AudioProviderFMODiOS → 7.0 typeinfo 0x1014B7690
 // → MTP vtable 0x1014B75B0；getpos 槽 7 与 seek 槽 8 形状与 6.13 逐条一致）
 // 决策：不 hook FMOD 变速；只读位置 + seekTo。
-#define XRC_OFF_MTP_VTABLE           (0x4B75B0ULL)    // 绝对 VA 0x1014B75B0
+#define XRC_OFF_MTP_VTABLE           (0x14B75B0ULL)   // 绝对 VA 0x1014B75B0（注意：偏移是 0x14B75B0）
 #define XRC_OFF_MTP_GETPOS           (0x8E24F0ULL)    // vtable 槽 7，形状同 6.13
 #define XRC_PLAYER_SEEK_SLOT_OFF     (0x40)           // vtable 槽 8，形状同 6.13
 #define XRC_OFF_CH_GET_POSITION      (0x1033BBCULL)   // Channel::getPosition（内层同源）

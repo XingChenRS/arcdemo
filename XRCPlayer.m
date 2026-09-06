@@ -7,6 +7,7 @@
 #include <limits.h>
 #include "XRCPlayer.h"
 #include "XRCGameplay.h"   // xrc_swizzle_vtable（同 dylib 内跨模块）
+#include "XRCRuntime.h"
 #include "XRCProfile.h"
 
 typedef void *(*get_registry_fn)(void);
@@ -36,21 +37,28 @@ static uint32_t s_tw_mtp_getpos(void *self, int channel) {
 
 // ---- 安装（Tweak.x 引导时调用一次） ----
 void xrc_player_install(uint64_t image_base) {
-    extern uint64_t xrc_image_base(void);
-    if (XRC_OFF_GET_REGISTRY)      s_get_registry      = (get_registry_fn)     (image_base + XRC_OFF_GET_REGISTRY);
-    if (XRC_OFF_GET_CURRENT_SOUND) s_get_current_sound = (get_current_sound_fn)(image_base + XRC_OFF_GET_CURRENT_SOUND);
-    if (XRC_OFF_GET_SOUND_LENGTH)  s_get_sound_length  = (get_sound_length_fn) (image_base + XRC_OFF_GET_SOUND_LENGTH);
-    if (XRC_OFF_CH_GET_POSITION)   s_ch_get_position   = (ch_get_position_fn)  (image_base + XRC_OFF_CH_GET_POSITION);
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        if (!XRC_OFF_MTP_VTABLE || !XRC_OFF_MTP_GETPOS) return;  // profile 未就绪 → 降级
+    if (g_xrc.mtp_vtable && g_xrc.mtp_getpos) {
+        // 运行时锚点（info blob 重定位）优先
+        int slot = xrc_swizzle_vtable(g_xrc.mtp_vtable,
+                                      g_xrc.mtp_getpos - g_xrc.image_base,
+                                      (void *)s_tw_mtp_getpos,
+                                      (void **)&s_orig_mtp_getpos);
+        if (slot != INT_MIN)
+            acc_flog(@"mtp.getpos vtable installed slot=%d (runtime anchor)", slot);
+    } else if (XRC_OFF_MTP_VTABLE && XRC_OFF_MTP_GETPOS) {
+        // 编译期 profile fallback
+        extern uint64_t xrc_image_base(void);
         int slot = xrc_swizzle_vtable(xrc_image_base() + XRC_OFF_MTP_VTABLE,
                                       XRC_OFF_MTP_GETPOS,
                                       (void *)s_tw_mtp_getpos,
                                       (void **)&s_orig_mtp_getpos);
         if (slot != INT_MIN)
-            acc_flog(@"mtp.getpos vtable installed slot=%d", slot);
-    });
+            acc_flog(@"mtp.getpos vtable installed slot=%d (profile fallback)", slot);
+    }
+    if (XRC_OFF_CH_GET_POSITION)   s_ch_get_position   = (ch_get_position_fn)  (image_base + XRC_OFF_CH_GET_POSITION);
+    if (XRC_OFF_GET_CURRENT_SOUND) s_get_current_sound = (get_current_sound_fn)(image_base + XRC_OFF_GET_CURRENT_SOUND);
+    if (XRC_OFF_GET_SOUND_LENGTH)  s_get_sound_length  = (get_sound_length_fn) (image_base + XRC_OFF_GET_SOUND_LENGTH);
+    if (XRC_OFF_GET_REGISTRY)      s_get_registry      = (get_registry_fn)     (image_base + XRC_OFF_GET_REGISTRY);
 }
 
 void *xrc_player_get(void) {

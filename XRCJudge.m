@@ -7,6 +7,7 @@
 #import "AccCommon.h"    // acc_flog
 #include "XRCJudge.h"
 #include "XRCProfile.h"
+#include "XRCRuntime.h"
 #include "xrc_abi.h"
 
 static _Atomic(int) s_win_max  = 25;
@@ -31,14 +32,17 @@ static uint64_t s_xrc_judge_handler(uint64_t note, void *out) {
 
 bool xrc_judge_install(uint64_t image_base) {
 #if XRC_HAS_JUDGE_STUB
-    if (!XRC_JUDGE_SLOT_OFF) {
-        acc_flog(@"judge stub: slot offset not filled (injector not run?)");
+    uint64_t slot_va = g_xrc.judge_slot;
+    if (!slot_va) {
+        acc_flog(@"judge stub: slot anchor missing (stub not injected?)");
         return false;
     }
-    struct xrc_slot *slot = (struct xrc_slot *)(image_base + XRC_JUDGE_SLOT_OFF);
-    s_orig_judge = (uint64_t (*)(uint64_t, void *))slot->orig;
-    if (!s_orig_judge) {
-        acc_flog(@"judge stub: slot.orig = 0 (binary not stubbed?)");
+    struct xrc_slot *slot = (struct xrc_slot *)slot_va;
+    // slot.orig 是注入器写的静态地址（未重定位）；ASLR 下必须手动重定位。
+    // 正确值也以 g_xrc.judge_entry（info blob 重定位）为准。
+    s_orig_judge = (uint64_t (*)(uint64_t, void *))(g_xrc.judge_entry);
+    if (!s_orig_judge || (uint64_t)s_orig_judge < 0x100000000ULL) {
+        acc_flog(@"judge stub: judge_entry anchor invalid (%p)", (void *)s_orig_judge);
         return false;
     }
     // 完全接管：写 handler 指针即接管；写 0 即原生直通（trampoline 保证）。

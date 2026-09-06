@@ -9,6 +9,7 @@
 #include <mach/vm_map.h>
 #include <mach/mach_init.h>
 #include "XRCGameplay.h"
+#include "XRCRuntime.h"
 #include "XRCClock.h"
 #include "XRCPlayer.h"
 #include "XRCProfile.h"
@@ -32,7 +33,7 @@ int xrc_swizzle_vtable(uint64_t vtable_addr, uint64_t orig_fn_off, void *new_fn,
     void **vt = (void **)vtable_addr;
     // 同 6.13：地址合理性检查 + [-4, 64) 槽搜索
     if ((uintptr_t)vt < 0x100000000ULL || ((uintptr_t)vt & 7) != 0) return INT_MIN;
-    for (int i = -4; i < 64; i++) {
+    for (int i = 0; i < 200; i++) {
         void *cur = vt[i];
         if (!cur) continue;
 #if __has_feature(ptrauth_calls)
@@ -124,12 +125,11 @@ void xrc_gameplay_update(void *self, uint64_t a2, uint64_t a3, uint64_t a4, uint
 }
 
 void xrc_gameplay_install_hooks(uint64_t image_base) {
-    extern uint64_t xrc_image_base(void);
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        if (!XRC_OFF_GP_VTABLE || !XRC_OFF_GP_UPDATE_FN) return;  // profile 未就绪 → 静默降级
-        int slot = xrc_swizzle_vtable(xrc_image_base() + XRC_OFF_GP_VTABLE,
-                                      XRC_OFF_GP_UPDATE_FN,
+        if (!g_xrc.gp_vtable || !g_xrc.gp_update) return;  // 锚点未就绪 → 静默降级
+        int slot = xrc_swizzle_vtable(g_xrc.gp_vtable,
+                                      g_xrc.gp_update - g_xrc.image_base,
                                       (void *)xrc_gameplay_update,
                                       (void **)&s_orig_gp_update);
         if (slot != INT_MIN) acc_flog(@"gp.update vtable installed slot=%d", slot);
