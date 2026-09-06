@@ -45,7 +45,7 @@ void xrc_player_install(uint64_t image_base) {
                                       (void **)&s_orig_mtp_getpos);
         if (slot != INT_MIN)
             acc_flog(@"mtp.getpos vtable installed slot=%d (runtime anchor)", slot);
-    } else if (XRC_OFF_MTP_VTABLE && XRC_OFF_MTP_GETPOS) {
+    } else if (XRC_OFF_MTP_VTABLE != 0 && XRC_OFF_MTP_GETPOS != 0) {
         // 编译期 profile fallback
         extern uint64_t xrc_image_base(void);
         int slot = xrc_swizzle_vtable(xrc_image_base() + XRC_OFF_MTP_VTABLE,
