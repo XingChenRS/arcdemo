@@ -8,7 +8,7 @@
 
 void acc_flog(NSString *fmt, ...);
 
-@class WQSuspendView;
-extern WQSuspendView *button;
+@class XRCFloatButton;
+extern XRCFloatButton *button;
 extern UIView        *menuView;
 @class AccMenuController;

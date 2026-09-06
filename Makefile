@@ -11,12 +11,12 @@ ArcDemo_FILES += XRCPlayer.m
 ArcDemo_FILES += XRCGameplay.m
 ArcDemo_FILES += XRCJudge.m
 ArcDemo_FILES += XRCConfig.m
+ArcDemo_FILES += XRCFloatButton.m
 ArcDemo_FILES += fishhook.c
-ArcDemo_FILES += WQSuspendView/SuspendView/SuspendView/WQSuspendView.m
 ArcDemo_FILES += $(wildcard WHToast/WHToast/*.m)
 
 ArcDemo_CFLAGS  += -fobjc-arc
-ArcDemo_CFLAGS += -I./WQSuspendView/SuspendView -I./WHToast -I./include
+ArcDemo_CFLAGS += -I./WHToast -I./include
 
 ArcDemo_LIBRARIES = substrate
 ArcDemo_LOGOSFLAGS = -c generator=MobileSubstrate

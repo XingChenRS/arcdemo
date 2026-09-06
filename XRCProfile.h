@@ -22,18 +22,23 @@
 #define XRC_CLOCK_IN_NOTEGROUP_OFF 48
 
 // ---------------- GameScene ----------------
-// 出处: research/notes/ios-7.0.255-replay-chain.md §2
+// 出处: research/notes/ios-7.0.255-replay-chain.md §2/§3
 // （vtable RTTI 名 9GameScene 已验；本文件所有值均为 image 偏移，
 //   运行时地址 = image_base + offset）
 #define XRC_OFF_GP_VTABLE          (0x151D8C0ULL)   // 绝对 VA 0x10151D8C0
-#define XRC_OFF_GP_UPDATE_FN       (0xCA118CULL)    // vtable 槽 155：单参 (GameScene*)
-                                                    // = 6.13 gp.update 等价物（内含 HUD syncer 调用 0x100ca368c）
+// 每帧更新 = vtable 槽 103 sub_100CA7160（帧去重模式与 6.13 gp.update 同源：
+// 全局时间 +308 == self+1168 走快路径；否则 tick note group + 判定分发）。
+// 真机验证 2026-09-06：槽 155（sub_100CA118C）是场景初始化函数（只跑一次），
+// 不是每帧更新——已纠正。
+#define XRC_OFF_GP_UPDATE_FN       (0xCA7160ULL)    // 五参 (self,a2,a3,a4,a5)，同 6.13
 
 // ---------------- 桩点（改判） ----------------
 // 出处: 收敛版架构 spec §2（ABI 已确认：X0=note, X8=out_ptr, 无 sret）
 #define XRC_HAS_JUDGE_STUB          1
 #define XRC_JUDGE_STUB_ENTRY_OFF    (0x9D9ED8ULL)   // sub_1009D9ED8（判定区间求值器，表 B 消费点）
-#define XRC_JUDGE_SLOT_OFF          0   // TODO: 注入后由 inject.py 回填 __xrc_slots 运行时偏移
+// 注入器在 __DATA 零填充尾部（fileoff 0x164AB28，对齐 8）写入 slot；
+// 注入后回填此值（0 表示未打桩，dylib 静默降级）。
+#define XRC_JUDGE_SLOT_OFF          (0x164AB28ULL)
 
 // note 字段（改判 handler 读；replay-chain 笔记 §3.2）
 #define XRC_NOTE_TYPE_OFF           28
@@ -59,8 +64,10 @@
 #define XRC_PLAYER_SEEK_SLOT_OFF     (0x40)           // vtable 槽 8，形状同 6.13
 #define XRC_OFF_CH_GET_POSITION      (0x1033BBCULL)   // Channel::getPosition（内层同源）
 #define XRC_OFF_GET_CURRENT_SOUND    (0x103415CULL)   // Channel::getCurrentSound（日志串已验）
-#define XRC_OFF_GET_SOUND_LENGTH     0   // 未定位（进度条用 max_seen 兜底；P1 补）
-#define XRC_OFF_GET_REGISTRY         0   // 不再需要：getpos hook 直接缓存 player 实例
-#define XRC_REG_PLAYER_OFF           (8)
-#define XRC_PLAYER_CHANNELS_OFF      (0x38)
-#define XRC_CHANNEL_ENTRY_PTR_OFF    (8)
+// 未定位（进度条用 max_seen 兜底；P1 补）：get_sound_length
+// 不再需要（getpos hook 直接缓存 player 实例）：get_registry
+#define XRC_OFF_GET_REGISTRY        0
+#define XRC_OFF_GET_SOUND_LENGTH    0
+#define XRC_REG_PLAYER_OFF          (8)
+#define XRC_PLAYER_CHANNELS_OFF     (0x38)
+#define XRC_CHANNEL_ENTRY_PTR_OFF   (8)

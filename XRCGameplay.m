@@ -19,7 +19,7 @@
 
 _Atomic(void *) xrc_gp_instance = NULL;
 
-static void (*s_orig_gp_update)(void *) = NULL;
+static void (*s_orig_gp_update)(void *, uint64_t, uint64_t, uint64_t, uint64_t) = NULL;
 static void *s_gp_last_clock = NULL;
 static uint64_t s_gp_last_real_us = 0;
 
@@ -108,7 +108,7 @@ static void s_gp_retime_logic_clock(void *note_group) {
     *base_off = (int32_t)after;
 }
 
-void xrc_gameplay_update(void *self) {
+void xrc_gameplay_update(void *self, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5) {
     if (self) {
         atomic_store(&xrc_gp_instance, self);
         void *note_group = *(void **)((char *)self + XRC_GP_NOTEGROUP_OFF);
@@ -120,7 +120,7 @@ void xrc_gameplay_update(void *self) {
 #endif
         }
     }
-    if (s_orig_gp_update) s_orig_gp_update(self);
+    if (s_orig_gp_update) s_orig_gp_update(self, a2, a3, a4, a5);
 }
 
 void xrc_gameplay_install_hooks(uint64_t image_base) {

@@ -14,7 +14,7 @@
 #import <objc/message.h>
 
 #import "fishhook.h"
-#import "SuspendView/WQSuspendView.h"
+#import "XRCFloatButton.h"
 #import "WHToast/WHToast.h"
 
 #include "XRCProfile.h"
@@ -31,7 +31,7 @@ void acc_flog(NSString *fmt, ...) NS_FORMAT_FUNCTION(1, 2);
 #pragma mark - 全局 UI 状态（配置快照 + 控件）
 
 static xrc_config_t g_cfg = {0};
-WQSuspendView *button = nil;   // AccCommon.h extern（UI hook 引用）
+XRCFloatButton *button = nil;   // AccCommon.h extern（UI hook 引用）
 UIView        *menuView = nil;
 
 #pragma mark - 主程序定位（唯一跨模块的 image base 实现）
@@ -450,55 +450,31 @@ uint64_t xrc_image_base(void) {
     if (menuView) [self bringSubviewToFront:menuView];
 }
 %end
-
-%hook WQSuspendView
-- (instancetype)initWithFrame:(CGRect)frame showType:(WQSuspendViewType)type tapBlock:(void (^)(void))tapBlock {
-    id ret = %orig;
-    button = ret;
-    return ret;
-}
-%end
 %end
 
 #pragma mark - floating button bootstrap
 
 static void initButton(void) {
     [WHToast setShowMask:NO];
-    [WQSuspendView showWithType:WQSuspendViewTypeNone tapBlock:^{
+    button = [XRCFloatButton shared];
+    // 单击 = 打开菜单（修复：原双击手势与 WQSuspendView 冲突打不开）
+    button.onTap = ^{
+        [[AccMenuController shared] show];
+    };
+    // 长按 = 切换速度预设（原单击行为）
+    button.onLongPress = ^{
         if (g_cfg.speed_count <= 0) return;
         g_cfg.rate_index = (g_cfg.rate_index + 1) % g_cfg.speed_count;
         xrc_clock_set_rate((double)g_cfg.speeds[g_cfg.rate_index]);
         xrc_config_save(&g_cfg);
         if (g_cfg.toast) {
-            [WHToast showMessage:[NSString stringWithFormat:@"%.3fx (double-tap opens menu)", g_cfg.speeds[g_cfg.rate_index]]
+            [WHToast showMessage:[NSString stringWithFormat:@"%.3fx (tap opens menu)", g_cfg.speeds[g_cfg.rate_index]]
                                        duration:0.5 finishHandler:^{}];
         }
-    }];
-    button.frame = CGRectMake(0, 200, 40, 40);
-    button.backgroundColor = [UIColor blackColor];
-    button.layer.cornerRadius = 20;
-    button.layer.masksToBounds = YES;
-    button.layer.borderWidth = 3.0;
-    button.layer.borderColor = [UIColor whiteColor].CGColor;
-
-    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(3, 13, 34, 14)];
-    label.text = @"xrc";
-    label.textColor = [UIColor whiteColor];
-    label.font = [UIFont systemFontOfSize:11];
-    label.textAlignment = NSTextAlignmentCenter;
-    [button addSubview:label];
-
-    UITapGestureRecognizer *dt = [[UITapGestureRecognizer alloc]
-        initWithTarget:[AccMenuController shared] action:@selector(handleDoubleTap:)];
-    dt.numberOfTapsRequired = 2;
-    [button addGestureRecognizer:dt];
-
+    };
     UIWindow *w = [[AccMenuController shared] keyWindow];
-    if (w && !button.superview) {
-        [w addSubview:button];
-        [w bringSubviewToFront:button];
-    }
-    if (!g_cfg.button_enabled) [button setHidden:YES];
+    [button attachToWindow:w];
+    if (!g_cfg.button_enabled) [button setHiddenState:YES];
 }
 
 @interface AccMenuController (MenuGesture) @end

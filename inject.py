@@ -1,9 +1,21 @@
 """
 Inject libArcDemo.dylib + libellekit.dylib into Arc-mobile.app.
 
-This script only copies dylibs and inserts LC_LOAD_DYLIB / LC_RPATH into the
-existing load-command padding. It intentionally does not graft, reserve slots,
-or patch gameplay/judgement code in the main binary.
+Two independent stages:
+
+1. dylib injection (default): copy dylibs, insert LC_LOAD_DYLIB / LC_RPATH
+   into the existing load-command padding.
+2. judge stub (--stub): patch sub_1009D9ED8 entry -> trampoline in __TEXT tail
+   zero-padding -> slot in __DATA tail zero-padding. No Mach-O header surgery;
+   both regions lie inside the existing segment filesizes. Re-sign afterwards
+   (the user signs the result).
+
+Stub facts (Arcaea iOS 7.0.255, research/notes/ios-7.0.255-judgement-chain.md):
+  entry      vm 0x1009D9ED8  (fileoff 0x9D9ED8)
+  trampoline vm 0x10146800C  (fileoff 0x146800C, __TEXT tail zero-run 0x146800a..0x146c000)
+  slot       vm 0x10164AB28  (fileoff 0x164AB28, __DATA tail zero-run 0x164ab25..0x164c000)
+  distance entry->tramp = 177MB > B range -> ADRP+ADD+BR absolute (12 bytes,
+  replays first 3 insns of the entry prologue).
 """
 import os
 import shutil
@@ -19,6 +31,101 @@ INJECT_NAME = "@rpath/libArcDemo.dylib"
 
 LC_LOAD_DYLIB = 0x8000000C
 LC_RPATH = 0x8000001C
+
+# ---- judge stub constants (7.0.255) ----
+STUB_ENTRY_VA   = 0x1009D9ED8
+STUB_ENTRY_FILE = 0x9D9ED8
+STUB_TRAMP_VA   = 0x10146800C
+STUB_TRAMP_FILE = 0x146800C
+STUB_SLOT_VA    = 0x10164AB28
+STUB_SLOT_FILE  = 0x164AB28
+# expected first 3 insns at entry (file byte order; verified in IDA dwords
+# d10103ff=a90157f6=a9024ff4 as SUB SP,#0x30 / STP X22,X21 / STP X20,X19):
+STUB_ENTRY_EXPECT = bytes.fromhex("ff0301d1f65701a9f44f02a9")
+
+
+def encode_adrp_add_br(pc_addr: int, dst: int, reg: int = 16) -> bytes:
+    """ADRP reg, dst_page; ADD reg, reg, #pgoff; BR reg (12 bytes)."""
+    pc_page = pc_addr & ~0xFFF
+    dst_page = dst & ~0xFFF
+    imm = (dst_page - pc_page) >> 12
+    imm &= 0x1FFFFF  # 21-bit 符号扩展
+    adrp = 0x90000000 | ((imm & 3) << 29) | (((imm >> 2) & 0x7FFFF) << 5) | reg
+    add = 0x91000000 | ((dst & 0xFFF) << 10) | (reg << 5) | reg
+    br = 0xD61F0000 | (reg << 5)
+    return struct.pack("<III", adrp, add, br)
+
+
+def encode_b(pc_addr: int, dst: int) -> int:
+    off = (dst - pc_addr) >> 2
+    assert -0x2000000 <= off < 0x2000000, "B out of range"
+    return 0x14000000 | (off & 0x3FFFFFF)
+
+
+def build_trampoline() -> bytes:
+    """Full-takeover trampoline (converged spec section 2.2)."""
+    out = bytearray()
+    # ADRP X9, slot_page; ADD X9, X9, #pgoff
+    pc = STUB_TRAMP_VA
+    pc_page = pc & ~0xFFF
+    slot_page = STUB_SLOT_VA & ~0xFFF
+    imm = (slot_page - pc_page) >> 12
+    adrp = 0x90000000 | ((imm & 3) << 29) | (((imm >> 2) & 0x7FFFF) << 5) | 9
+    add = 0x91000000 | ((STUB_SLOT_VA & 0xFFF) << 10) | (9 << 5) | 9
+    out += struct.pack("<II", adrp, add)
+    pc += 8
+    # LDR X9, [X9]        (0xF9400129)
+    out += struct.pack("<I", 0xF9400129)
+    pc += 4
+    # CBZ X9, native（目标 = 重放区起点 = 当前 pc + 4(BR 占位) + 4(CBZ 自身之后即 native)）
+    cbz_pc = pc
+    native_va = cbz_pc + 8  # 跳过 CBZ + BR 两条
+    off = (native_va - cbz_pc) >> 2
+    cbz = 0xB4000000 | ((off & 0x7FFFF) << 5) | 9
+    out += struct.pack("<I", cbz)
+    pc += 4
+    # BR X9（0xD61F0120：Rn=X9=0b01001<<5=0x120）
+    out += struct.pack("<I", 0xD61F0120)
+    pc += 4
+    # native: replay 3 insns then B entry+12
+    out += STUB_ENTRY_EXPECT
+    pc += 12
+    out += struct.pack("<I", encode_b(pc, STUB_ENTRY_VA + 12))
+    return bytes(out)
+
+
+def patch_judge_stub(data: bytearray) -> list[str]:
+    logs = []
+    base = fat_arm64_slice_offset(bytes(data))
+    entry_file = base + STUB_ENTRY_FILE
+    cur = bytes(data[entry_file:entry_file + 12])
+    if cur != STUB_ENTRY_EXPECT:
+        raise RuntimeError(
+            f"stub entry bytes mismatch at {entry_file:#x}: {cur.hex()} "
+            f"(expected {STUB_ENTRY_EXPECT.hex()}) — wrong binary version?"
+        )
+    tramp = build_trampoline()
+    tramp_file = base + STUB_TRAMP_FILE
+    if len(tramp) > 0x40:
+        raise RuntimeError("trampoline too large")
+    # verify zero region
+    if bytes(data[tramp_file:tramp_file + len(tramp)]) != b"\0" * len(tramp):
+        raise RuntimeError(f"trampoline region not zero @ {tramp_file:#x}")
+    data[tramp_file:tramp_file + len(tramp)] = tramp
+    logs.append(f"trampoline ({len(tramp)}B) @ fileoff {tramp_file:#x} (vm {STUB_TRAMP_VA:#x})")
+
+    # slot: 16 bytes {handler=0, orig=STUB_ENTRY_VA}
+    slot_file = base + STUB_SLOT_FILE
+    if bytes(data[slot_file:slot_file + 16]) != b"\0" * 16:
+        raise RuntimeError(f"slot region not zero @ {slot_file:#x}")
+    data[slot_file:slot_file + 16] = struct.pack("<QQ", 0, STUB_ENTRY_VA)
+    logs.append(f"slot (16B) @ fileoff {slot_file:#x} (vm {STUB_SLOT_VA:#x})")
+
+    # entry patch: ADRP/ADD/BR X16 -> trampoline
+    patch = encode_adrp_add_br(STUB_ENTRY_VA, STUB_TRAMP_VA)
+    data[entry_file:entry_file + 12] = patch
+    logs.append(f"entry patched ({12}B) @ vm {STUB_ENTRY_VA:#x} -> tramp")
+    return logs
 
 
 def fat_arm64_slice_offset(raw: bytes) -> int:
@@ -162,6 +269,7 @@ def find_dylibs() -> list[str]:
 
 
 def main():
+    do_stub = "--stub" in sys.argv
     if not os.path.isfile(MAIN):
         print(f"[!] main not found: {MAIN}")
         sys.exit(1)
@@ -189,6 +297,16 @@ def main():
     except RuntimeError as e:
         print(f"[!] {e}")
         sys.exit(1)
+
+    if do_stub:
+        try:
+            logs = patch_judge_stub(data)
+            for line in logs:
+                print(f"[+] {line}")
+        except RuntimeError as e:
+            print(f"[!] stub: {e}")
+            sys.exit(1)
+        print("[i] stub patched — re-sign the app before installing")
 
     with open(MAIN, "wb") as f:
         f.write(data)

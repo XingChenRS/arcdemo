@@ -2,3 +2,5 @@
 .theos/
 packages/
 AppIcons/
+__pycache__/
+xrc_icon_b64.txt

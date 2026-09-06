@@ -24,7 +24,7 @@ static _Atomic(uint32_t) s_last_pos_ms = 0;
 static _Atomic(uint32_t) s_max_seen_ms = 0;
 static _Atomic(uint32_t) s_song_len_ms = 0;
 
-// MTP getpos vtable hook（位置缓存唯一更新源）
+// MTP getpos vtable hook（位置缓存唯一更新源）。7.0 单参 (self, channel)。
 static uint32_t (*s_orig_mtp_getpos)(void *self, int channel) = NULL;
 
 static uint32_t s_tw_mtp_getpos(void *self, int channel) {

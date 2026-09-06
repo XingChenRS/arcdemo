@@ -12,8 +12,8 @@ int xrc_swizzle_vtable(uint64_t vtable_addr, uint64_t orig_fn_off, void *new_fn,
 // 安装 gameplay vtable hook（换速 retime）。
 void xrc_gameplay_install_hooks(uint64_t image_base);
 
-// gp.update 替换实现（self = GameScene；7.0 单参）。
-void xrc_gameplay_update(void *self);
+// gp.update 替换实现（self = GameScene；7.0 五参，同 6.13）。
+void xrc_gameplay_update(void *self, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5);
 
 // seek：音频 seek + 谱面钟平移（6.13 已验证语义）。
 void xrc_seek_ms(uint32_t ms);

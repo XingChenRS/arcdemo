@@ -16,14 +16,15 @@ static _Atomic(int) s_win_lost = 120;
 
 // ---- 完全接管 handler（X0=note, X8=out）----
 #if XRC_HAS_JUDGE_STUB
+// 原函数入口（安装时从 slot.orig 读）。handler 直通它 = 行为与未打桩完全一致。
+static uint64_t (*s_orig_judge)(uint64_t note, void *out) = NULL;
+
 static uint64_t s_xrc_judge_handler(uint64_t note, void *out) {
-    if (!note || !out) return 0;
-    // note 字段（profile 行）：
-    int32_t type = *(int32_t *)(note + XRC_NOTE_TYPE_OFF);
-    // TODO(v1.1)：按表 B 消费格式写窗口值对到 *out。
-    // 当前骨架：写 0 占位（等于原函数入口的 *out=0 语义），handler 通路验证用。
-    (void)type;
-    *(uint64_t *)out = 0;
+    // 骨架：直通原函数（端到端验证桩通路，行为不变）。
+    // 窗口覆盖逻辑待表 B 消费格式解码（research/notes/ios-7.0.255-replay-chain.md §9）
+    // 后实现：配置 == 默认时直通；非默认时按 note 字段计算窗口写回 *out。
+    if (s_orig_judge) return s_orig_judge(note, out);
+    if (out) *(uint64_t *)out = 0;
     return 0;
 }
 #endif
@@ -35,9 +36,14 @@ bool xrc_judge_install(uint64_t image_base) {
         return false;
     }
     struct xrc_slot *slot = (struct xrc_slot *)(image_base + XRC_JUDGE_SLOT_OFF);
+    s_orig_judge = (uint64_t (*)(uint64_t, void *))slot->orig;
+    if (!s_orig_judge) {
+        acc_flog(@"judge stub: slot.orig = 0 (binary not stubbed?)");
+        return false;
+    }
     // 完全接管：写 handler 指针即接管；写 0 即原生直通（trampoline 保证）。
     slot->handler = (void *)&s_xrc_judge_handler;
-    acc_flog(@"judge handler installed at slot %p", (void *)slot);
+    acc_flog(@"judge handler installed at slot %p (orig=%p)", (void *)slot, (void *)s_orig_judge);
     return true;
 #else
     (void)image_base;
