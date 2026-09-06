@@ -9,6 +9,7 @@ typedef struct {
     NSInteger rate_index;
     BOOL      button_enabled;
     BOOL      toast;
+    BOOL      seek_replay;    // seek 松手后带进度转场重开（默认关——先跑稳纯 seek）
     int       judge_max_ms;
     int       judge_pure_ms;
     int       judge_far_ms;

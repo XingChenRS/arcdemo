@@ -16,3 +16,6 @@ void xrc_judge_get_windows(int *max_ms, int *pure_ms, int *far_ms, int *lost_ms)
 // 窗口缩放（handler 生效路径）：scale = 四档之和 / 270.0（默认 1.0）。
 void xrc_judge_set_scale(float scale);
 float xrc_judge_get_scale(void);
+
+// 桩点是否真正激活（未打桩/未注册时为 false → UI 隐藏改判区）。
+bool xrc_judge_is_active(void);

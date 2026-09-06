@@ -58,11 +58,21 @@ xrc_runtime_t xrc_runtime_discover(void) {
         return r;
     }
 
+    // 诊断日志（下次真机日志直接暴露布局事实）
+    acc_flog(@"runtime discover: base=%llx DATA=[%llx,%llx) expect=%llx",
+             base, data_start, data_end, base + XRC_INFO_OFF);
+
     // 扫描范围限定 __DATA 段内（预期位置前后截断到段边界）
     uint64_t expect = base + XRC_INFO_OFF;
     uint64_t scan_start = expect > data_start + (1u << 20) ? expect - (1u << 20) : data_start;
     uint64_t scan_end   = expect + (1u << 20);
     if (scan_end > data_end) scan_end = data_end;
+    if (expect >= data_start && expect + 16 <= data_end) {
+        const uint8_t *p = (const uint8_t *)expect;
+        acc_flog(@"runtime discover: expect 16B = %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x %02x%02x%02x%02x",
+                 p[0],p[1],p[2],p[3], p[4],p[5],p[6],p[7],
+                 p[8],p[9],p[10],p[11], p[12],p[13],p[14],p[15]);
+    }
     const struct xrc_info *info = s_scan_info(scan_start, scan_end);
     if (info) {
         r.found = true;

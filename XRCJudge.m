@@ -51,6 +51,12 @@ float xrc_judge_get_scale(void) {
     return atomic_load(&s_window_scale);
 }
 
+static _Atomic(bool) s_judge_active = false;
+
+bool xrc_judge_is_active(void) {
+    return atomic_load(&s_judge_active);
+}
+
 bool xrc_judge_install(uint64_t image_base) {
 #if XRC_HAS_JUDGE_STUB
     uint64_t slot_va = g_xrc.judge_slot;
@@ -68,6 +74,7 @@ bool xrc_judge_install(uint64_t image_base) {
     }
     // 完全接管：写 handler 指针即接管；写 0 即原生直通（trampoline 保证）。
     slot->handler = (void *)&s_xrc_judge_handler;
+    atomic_store(&s_judge_active, true);
     acc_flog(@"judge handler installed at slot %p (orig=%p)", (void *)slot, (void *)s_orig_judge);
     return true;
 #else

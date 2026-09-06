@@ -24,6 +24,86 @@ static void (*s_orig_gp_update)(void *, uint64_t, uint64_t, uint64_t, uint64_t) 
 static void *s_gp_last_clock = NULL;
 static uint64_t s_gp_last_real_us = 0;
 
+// ---- deferred 操作状态机 ----
+// 场景代数：转场后新场景 +1160 等字段变化 → 通过 self 指针变化检测场景切换，
+// 旧场景的 pending 请求自动作废（指针不同）。
+static _Atomic(uint32_t) s_pending_op    = XRC_OP_NONE;
+static _Atomic(uint32_t) s_pending_ms    = 0;
+static _Atomic(uint64_t) s_last_exec_us  = 0;   // 冷却起点（真实时间 us）
+static _Atomic(uint64_t) s_exec_gen      = 0;   // 执行代（防同帧重复）
+#define XRC_OP_COOLDOWN_US  (1500 * 1000ULL)    // 转场/seek 冷却 1.5s
+#define XRC_OP_MAX_IDLE_US  (4000 * 1000ULL)    // 请求超过 4s 未执行 → 丢弃
+
+bool xrc_gameplay_request(xrc_op_t op, uint32_t param_ms) {
+    uint32_t cur = atomic_load(&s_pending_op);
+    if (cur != XRC_OP_NONE) {
+        acc_flog(@"request rejected: pending op=%u", cur);
+        return false;
+    }
+    atomic_store(&s_pending_ms, param_ms);
+    atomic_store(&s_pending_op, op);
+    return true;
+}
+
+xrc_op_t xrc_gameplay_pending_op(void) {
+    return (xrc_op_t)atomic_load(&s_pending_op);
+}
+
+// 请求到期清理（避免卡死状态机）
+static void s_pending_expire_if_stale(uint64_t now_us) {
+    uint64_t req_time = atomic_load(&s_last_exec_us);
+    if (req_time && now_us - req_time > XRC_OP_MAX_IDLE_US) {
+        atomic_store(&s_pending_op, XRC_OP_NONE);
+    }
+}
+
+// 在游戏循环内执行 pending（self = 当前活场景）。
+static void s_exec_pending(void *self) {
+    uint32_t op = atomic_load(&s_pending_op);
+    if (op == XRC_OP_NONE) return;
+
+    uint64_t now = xrc_real_now_us();
+    uint64_t last = atomic_load(&s_last_exec_us);
+    if (last && now - last < XRC_OP_COOLDOWN_US) return;  // 冷却中
+    s_pending_expire_if_stale(now);
+
+    uint32_t ms = atomic_load(&s_pending_ms);
+    atomic_store(&s_pending_op, XRC_OP_NONE);   // 先清（防止执行内重入）
+    atomic_store(&s_last_exec_us, now);
+    atomic_fetch_add(&s_exec_gen, 1);
+
+    if (op == XRC_OP_SEEK || op == XRC_OP_SEEK_REPLAY) {
+        // 音频 seek + 谱面钟平移（纯数据操作，安全）
+        void *player = xrc_player_get();
+        if (player) {
+            xrc_clock_freeze_inc();
+            xrc_player_seek_ms(player, ms);
+            xrc_clock_freeze_dec();
+        }
+        void *note_group = *(void **)((char *)self + XRC_GP_NOTEGROUP_OFF);
+        int32_t cur_ms = xrc_chart_clock_ms(note_group);
+        if (cur_ms >= -3000) {
+            void *clk = note_group ? *(void **)((char *)note_group + XRC_CLOCK_IN_NOTEGROUP_OFF) : NULL;
+            if (clk) {
+                int32_t *base_off = (int32_t *)((char *)clk + XRC_CLK_BASE_OFF);
+                *base_off += cur_ms - (int32_t)ms;
+            }
+        }
+        s_gp_last_real_us = 0;
+        acc_flog(@"seek executed: ms=%u (cur was %d)", ms, cur_ms);
+    }
+
+#if XRC_HAS_TRANSITION
+    if (op == XRC_OP_SEEK_REPLAY || op == XRC_OP_LOOP_REWIND) {
+        // 转场重开：谱面钟已平移到目标（上面 seek 已做），带进度转场
+        if (xrc_transition_resume(self, true))
+            acc_flog(@"transition resume executed (op=%u, ms=%u)", op, ms);
+        else
+            acc_flog(@"transition resume FAILED (op=%u)", op);
+    }
+#endif
+}
+
 // ---- vtable swizzle（PAC 感知）----
 int xrc_swizzle_vtable(uint64_t vtable_addr, uint64_t orig_fn_off, void *new_fn, void **out_orig) {
     extern uint64_t xrc_image_base(void);
@@ -120,6 +200,7 @@ void xrc_gameplay_update(void *self, uint64_t a2, uint64_t a3, uint64_t a4, uint
             if (pos > 0) xrc_loop_tick(self, (uint32_t)pos);
 #endif
         }
+        s_exec_pending(self);   // deferred 操作（seek/转场）在活场景循环内执行
     }
     if (s_orig_gp_update) s_orig_gp_update(self, a2, a3, a4, a5);
 }
@@ -215,9 +296,8 @@ void xrc_loop_set_range(uint32_t a_ms, uint32_t b_ms) {
 void xrc_loop_tick(void *gameplay, uint32_t pos_ms) {
     if (!atomic_load(&s_loop_enabled)) return;
     if (pos_ms >= atomic_load(&s_loop_b)) {
-        // 目标 A：先平移谱面钟到 A，再带进度转场
-        xrc_seek_ms(atomic_load(&s_loop_a));
-        xrc_transition_resume(gameplay, true);
+        // 循环回到 A：deferred 执行（复用状态机，保证在活场景内跑）
+        xrc_gameplay_request(XRC_OP_LOOP_REWIND, atomic_load(&s_loop_a));
     }
 }
 #else

@@ -18,7 +18,25 @@ void xrc_gameplay_update(void *self, uint64_t a2, uint64_t a3, uint64_t a4, uint
 // 当前 gameplay 实例（gp.update hook 缓存；Tweak.x 转场/循环用）。
 extern _Atomic(void *) xrc_gp_instance;
 
+// ---- deferred 操作状态机（UI 只登记，gp.update 循环内执行）----
+// 原因：转场/seek 读旧场景内部状态（sub_10091BBB8(v3[116])），
+// UI 回调里 self 可能已过期 → UAF 崩溃。游戏循环内 self 保证存活。
+typedef enum {
+    XRC_OP_NONE = 0,
+    XRC_OP_SEEK,          // 音频 seek + 谱面钟平移（不转场）
+    XRC_OP_SEEK_REPLAY,   // seek 后带进度转场重开（seek-replay）
+    XRC_OP_LOOP_REWIND,   // A-B 循环回到 A（带转场）
+} xrc_op_t;
+
+// UI 登记（非阻塞）：返回是否受理（状态机忙时拒绝）。
+bool xrc_gameplay_request(xrc_op_t op, uint32_t param_ms);
+
+// 当前 pending 状态（UI 显示/防重入用）。
+xrc_op_t xrc_gameplay_pending_op(void);
+
 // seek：音频 seek + 谱面钟平移（6.13 已验证语义）。
+// seek：音频 seek + 谱面钟平移。注意：新代码一律走 deferred 状态机
+// （xrc_gameplay_request），此函数仅内部/兼容用。
 void xrc_seek_ms(uint32_t ms);
 
 // 读取谱面钟当前值（按 XRCProfile 的 clock 布局）。

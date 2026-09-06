@@ -34,6 +34,7 @@ static void s_ensure_defaults(NSMutableDictionary *p) {
     if (!p[@"buttonEnabled"]) p[@"buttonEnabled"] = @YES;
     if (!p[@"toast"])         p[@"toast"]         = @YES;
     if (!p[@"rateIndex"])     p[@"rateIndex"]     = @0;
+    if (!p[@"seekReplay"])    p[@"seekReplay"]    = @NO;
     if (!p[@"judgeMaxMs"] && p[@"judgeWindowScale"]) {
         float sc = [p[@"judgeWindowScale"] floatValue];
         if (sc < 0.25f) sc = 0.25f;
@@ -82,6 +83,7 @@ void xrc_config_load(xrc_config_t *out) {
     NSMutableDictionary *prefs = xrc_config_dict();
     out->toast          = [prefs[@"toast"] boolValue];
     out->button_enabled = [prefs[@"buttonEnabled"] boolValue];
+    out->seek_replay    = [prefs[@"seekReplay"] boolValue];
     NSArray *speed_keys = prefs[@"speedKeys"];
     out->speed_count    = speed_keys.count;
     for (NSInteger i = 0; i < out->speed_count && i < 16; i++)
@@ -100,6 +102,7 @@ void xrc_config_save(const xrc_config_t *c) {
     NSMutableDictionary *p = xrc_config_dict();
     p[@"toast"]         = @(c->toast);
     p[@"buttonEnabled"] = @(c->button_enabled);
+    p[@"seekReplay"]    = @(c->seek_replay);
     p[@"rateIndex"]     = @(c->rate_index);
     p[@"judgeMaxMs"]    = @(c->judge_max_ms);
     p[@"judgePureMs"]   = @(c->judge_pure_ms);

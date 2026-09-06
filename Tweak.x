@@ -211,7 +211,11 @@ uint64_t xrc_image_base(void) {
     y += MAX(28, swSize.height) + 8;
 
     UILabel *judgeHdr = [[UILabel alloc] initWithFrame:CGRectMake(12, y, innerW, 32)];
-    judgeHdr.text = @"Judgement window +/-ms (Max / Pure / Far / Lost)";
+    if (xrc_judge_is_active()) {
+        judgeHdr.text = @"Judgement window +/-ms (Max / Pure / Far / Lost)";
+    } else {
+        judgeHdr.text = @"Judgement: stub not active (binary not patched)";
+    }
     judgeHdr.font = [UIFont systemFontOfSize:12];
     judgeHdr.textColor = [UIColor darkGrayColor];
     judgeHdr.numberOfLines = 2;
@@ -238,6 +242,7 @@ uint64_t xrc_image_base(void) {
         tf.text = [NSString stringWithFormat:@"%d", judgeVals[j]];
         tf.tag = 4100 + j;
         tf.delegate = (id<UITextFieldDelegate>)self;
+        tf.enabled = xrc_judge_is_active();   // 桩点未激活时只读
         [card addSubview:tf];
     }
     y += 52;
@@ -291,14 +296,26 @@ uint64_t xrc_image_base(void) {
     y += 40;
 
 #if XRC_HAS_TRANSITION
-    // A-B 循环练习（v2.1：到 B 自动转场回 A，白闪帧为预期形态）
+    // A-B 循环练习（v2.1：ArcCreate 风格 From/To + On-Off）
     UIButton *loopBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     loopBtn.frame = CGRectMake(12, y, innerW, 32);
-    [loopBtn setTitle:xrc_loop_get_enabled() ? @"A-B Loop: ON (tap to off)" : @"A-B Loop: OFF (tap = set A, tap again = set B)"
+    [loopBtn setTitle:xrc_loop_get_enabled() ? @"A-B Loop: ON (tap = off)" : @"A-B Loop: OFF (tap = set From)"
               forState:UIControlStateNormal];
     [loopBtn addTarget:self action:@selector(loopTapped:) forControlEvents:UIControlEventTouchUpInside];
     [card addSubview:loopBtn];
     y += 40;
+    // seek-replay 开关（默认关——先跑稳纯 seek）
+    UISwitch *replaySw = [[UISwitch alloc] initWithFrame:CGRectZero];
+    replaySw.frame = CGRectMake(W - 12 - swSize.width, y, swSize.width, swSize.height);
+    replaySw.on = g_cfg.seek_replay;
+    [replaySw addTarget:self action:@selector(replayChanged:) forControlEvents:UIControlEventValueChanged];
+    UILabel *replayLbl = [[UILabel alloc] initWithFrame:CGRectMake(12, y, innerW - 60, 28)];
+    replayLbl.text = @"Seek-replay (transition reopen)";
+    replayLbl.font = [UIFont systemFontOfSize:14];
+    replayLbl.textColor = [UIColor blackColor];
+    [card addSubview:replayLbl];
+    [card addSubview:replaySw];
+    y += MAX(28, swSize.height) + 8;
 #endif
 
     UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -315,13 +332,14 @@ uint64_t xrc_image_base(void) {
 - (void)sliderTouchDown:(UISlider *)s { self.userDraggingSlider = YES; }
 - (void)sliderTouchUp:(UISlider *)s {
     self.userDraggingSlider = NO;
-    xrc_seek_ms((uint32_t)s.value);
+    // deferred：seek 在游戏循环内执行（UI 回调里 self 可能过期 → UAF）
 #if XRC_HAS_TRANSITION
-    // seek-replay：谱面钟已平移到目标位置，带进度转场重开场景
-    // （游戏自拆建：跳过 T 前音符、计分复位——v2.0 机制，白闪帧为预期形态）
-    void *gp = atomic_load(&xrc_gp_instance);
-    if (gp && xrc_transition_resume(gp, true))
-        acc_flog(@"transition resume after seek");
+    if (g_cfg.seek_replay && xrc_gameplay_pending_op() == XRC_OP_NONE)
+        xrc_gameplay_request(XRC_OP_SEEK_REPLAY, (uint32_t)s.value);
+    else
+        xrc_gameplay_request(XRC_OP_SEEK, (uint32_t)s.value);
+#else
+    xrc_gameplay_request(XRC_OP_SEEK, (uint32_t)s.value);
 #endif
 }
 
@@ -424,25 +442,36 @@ uint64_t xrc_image_base(void) {
 }
 
 #if XRC_HAS_TRANSITION
-static uint32_t s_loop_pending_a = 0;   // 第一次点击暂存的 A
+- (void)replayChanged:(UISwitch *)s {
+    g_cfg.seek_replay = s.on;
+    xrc_config_save(&g_cfg);
+    if (g_cfg.toast)
+        [WHToast showMessage:s.on ? @"Seek-replay on" : @"Seek-replay off"
+                    duration:0.5 finishHandler:^{}];
+}
+
+// ArcCreate 风格循环设置：Off → tap=From（当前进度）→ tap=To（当前进度）→ 启用。
+// 夹取规则：To >= From + 1000ms；From >= 0。到达 To 自动 deferred 转场回 From。
+static uint32_t s_loop_pending_a = 0;   // 第一次点击暂存的 From
+static uint32_t s_loop_pending_b = 0;   // 第二次点击暂存的 To（启用前）
 - (void)loopTapped:(UIButton *)b {
     uint32_t pos = xrc_player_position_ms();
     if (xrc_loop_get_enabled()) {
         xrc_loop_set_range(0, 0);   // 关闭
-        s_loop_pending_a = 0;
+        s_loop_pending_a = s_loop_pending_b = 0;
         if (g_cfg.toast) [WHToast showMessage:@"A-B loop off" duration:0.5 finishHandler:^{}];
-    } else if (s_loop_pending_a == 0) {
-        // 第一次点击 = 设 A（当前进度，回退 2 秒给准备时间）
+    } else if (s_loop_pending_a == 0 && s_loop_pending_b == 0) {
+        // 第一次点击 = From（当前进度，回退 2 秒给准备时间）
         s_loop_pending_a = pos > 2000 ? pos - 2000 : 0;
-        if (g_cfg.toast) [WHToast showMessage:@"Loop A set — tap again for B" duration:0.8 finishHandler:^{}];
-    } else {
-        // 第二次点击 = 设 B（当前进度），启用循环
+        if (g_cfg.toast) [WHToast showMessage:@"Loop From set — tap again for To" duration:0.8 finishHandler:^{}];
+    } else if (s_loop_pending_b == 0) {
+        // 第二次点击 = To（当前进度），启用
         if (pos > s_loop_pending_a + 1000) {
             xrc_loop_set_range(s_loop_pending_a, pos);
-            s_loop_pending_a = 0;
+            s_loop_pending_a = s_loop_pending_b = 0;
             if (g_cfg.toast) [WHToast showMessage:@"A-B loop on" duration:0.5 finishHandler:^{}];
         } else {
-            if (g_cfg.toast) [WHToast showMessage:@"B must be after A" duration:0.5 finishHandler:^{}];
+            if (g_cfg.toast) [WHToast showMessage:@"To must be at least 1s after From" duration:0.8 finishHandler:^{}];
         }
     }
     [self rebuild];
