@@ -2,6 +2,14 @@
 
 ArcDemo 演进记录。能力状态标记与 [xrc 能力账本](../../research/notes/xrc-arcaea-capability-ledger-2026-08-31.md) 对齐（XRC-R 运行中 / XRC-V 已验证 / XRC-S 静态闭环 / PROTO 失败原型 / OPEN 未闭合）。
 
+## 2026-09-07 — Deferred 状态机 + 能力门控
+
+- 崩溃修复：转场/seek 全部 deferred 到 gp.update 游戏循环内执行（UI 回调里旧场景可能已释放 → UAF）。状态机：SEEK / SEEK_REPLAY / LOOP_REWIND 三种操作，1.5s 冷却、4s 过期丢弃、代计数。UI 只登记。
+- 能力门控（不做双编译）：stub 未激活 → 改判区隐藏只读；seek-replay 默认关（config seekReplay，先跑稳纯 seek）；循环 UI 按转场能力显示。
+- A-B 循环改为 ArcCreate 练习模式风格：From/To 两次点击 + On/Off，To ≥ From+1000ms 夹取。
+- XRCRuntime 诊断日志（DATA 范围 + 预期 slot 字节）——runtime info 在真机仍 NOT found，下次日志定位。
+- 窗口求值器输出语义确认：*out = 单个 f32 窗口 ms（caller vadd_f32 到特效时间基），handler 用"调原函数 + 缩放"路线，无需复刻表 B。
+
 ## 2026-09-06 — 音频链重定位（seek/进度条恢复）
 
 - MTP vtable = `0x1014B75B0`（RTTI 名 `20AudioProviderFMODiOS` 经 typeinfo `0x1014B7690` 验证）；getpos 槽 7 = `sub_1008E24F0`、seek 槽 8 = `sub_1008E253C`（形状与 6.13 逐条一致）。
