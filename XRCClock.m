@@ -11,7 +11,7 @@ static _Atomic(uint32_t) s_rate_x1000  = 1000;
 static _Atomic(int32_t)  s_freeze_count = 0;
 static _Atomic(uint64_t) s_frozen_us    = 0;
 
-struct timeval *(*xrc_clock_orig_gettimeofday)(struct timeval *, void *) = NULL;
+int (*xrc_clock_orig_gettimeofday)(struct timeval *, void *) = NULL;
 
 uint64_t xrc_real_now_us(void) {
     struct timeval tv = {0};

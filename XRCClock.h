@@ -23,4 +23,4 @@ int32_t xrc_clock_freeze_count(void);
 // fishhook 入口（gettimeofday 拦截），供 Tweak.x 注册。
 int xrc_clock_gettimeofday(struct timeval *tv, void *tz);
 // 原 gettimeofday（fishhook 保存），XRCGameplay 的 retime 用。
-extern struct timeval *(*xrc_clock_orig_gettimeofday)(struct timeval *, void *);
+extern int (*xrc_clock_orig_gettimeofday)(struct timeval *, void *);
