@@ -3,6 +3,7 @@
 Arcaea iOS 侧载 dylib：练习向运行时插件。xrc 工作区 `projects/runtime-ios/` 层的唯一活跃项目。
 
 > 仓库：<https://github.com/XingChenRS/ArcDemo>
+> 基准版本：**Arcaea iOS 7.0.255**（6.13 适配已于 2026-09-06 废弃，历史实现见 git 历史）
 > 证据与能力状态：以 [能力账本](../../../research/notes/xrc-arcaea-capability-ledger-2026-08-31.md) 为准；本文档只描述本仓库的定位、结构与纪律。
 
 ## 1. 定位（xrc 宏观约定）
@@ -21,15 +22,13 @@ Arcaea iOS 侧载 dylib：练习向运行时插件。xrc 工作区 `projects/run
 
 | 能力 | 状态 | 平台/版本 | 说明 |
 |---|---|---|---|
-| 谱面时间变速（Gameplay.update vtable） | **XRC-R** | iOS 6.13.10 | 当前 main 运行中 |
-| 视觉变速（fishhook gettimeofday） | **XRC-R** | iOS 6.13.10 | 当前 main 运行中 |
-| 基础 seek（音频 player + 谱面钟平移） | **XRC-R** | iOS 6.13.10 | 导航语义，已判音符不重放 |
-| 悬浮 UI / plist 配置 / 文件日志 | **XRC-R** | iOS 6.13.10 | `Documents/xrc-arcdemo.plist` |
-| 判定窗口参数 UI | **XRC-R/仅配置** | iOS 6.13.10 | 保存 Max/Pure/Far/Lost 四项，尚未生效 |
-| 静态判定窗口补丁（8×CMP imm） | **XRC-S/历史** | iOS 6.13.10 | v7.2 已撤出 main；地址保留于 `include/ArcOffsets.h` 作研究锚点 |
-| 运行时动态判定窗口 | **PROTO** | iOS 6.13.10 | v7.2 runtime patch / v7.3 graft 均失败，机制教训见 DEVLOG |
-| **动态改判（桩点+slot）** | **OPEN→实施中** | iOS 7.0.255 | 收敛架构 v1.1，见 specs |
-| **seek-replay / A-B 循环（转场机制）** | **OPEN→实施中** | iOS 7.0.255 | 收敛架构 v2.x，纯 dylib，零桩点 |
+| 谱面时间变速（GameScene vtable 槽 155 hook） | **XRC-R/重定位** | iOS 7.0.255 | vtable 槽已定（`sub_100CA118C`），待真机验证 |
+| 视觉变速（fishhook gettimeofday） | **XRC-R** | iOS 7.0.255 | 无地址依赖，直接沿用 |
+| 基础 seek（音频 + 谱面钟平移） | **降级** | iOS 7.0.255 | 音频链决策不 hook（见 DEVLOG）；谱面钟平移保留，音频不动 |
+| 悬浮 UI / plist 配置 / 文件日志 | **XRC-R** | iOS 7.0.255 | `Documents/xrc-arcdemo.plist` |
+| 判定窗口参数 UI | **XRC-R/仅配置** | iOS 7.0.255 | 保存 Max/Pure/Far/Lost 四项，等待桩点 handler 生效 |
+| **动态改判（桩点+slot）** | **OPEN→实施中** | iOS 7.0.255 | 收敛架构 v1.1：桩点 `sub_1009D9ED8`（ABI 已确认），注入器待打桩 |
+| **seek-replay / A-B 循环（转场机制）** | **OPEN→实施中** | iOS 7.0.255 | 收敛架构 v2.x：纯 dylib（vtable 槽 178），零桩点 |
 
 ## 3. 架构分层
 
@@ -78,8 +77,8 @@ make            # 产出 libArcDemo.dylib
 
 | 里程碑 | 内容 | 验证 |
 |---|---|---|
-| v1.0 | 源码模块化拆分（6.13 语义等价）+ profile 集中 | 6.13 真机行为不变 |
-| v1.1 | 7.0 profile + 注入器打桩 + 改判 handler | 7.0 真机动态改判生效 |
+| v1.0（当前） | 7.0.255 profile + 模块化 dylib：谱面/视觉变速、配置 UI；音频链降级 | 7.0 真机变速生效 |
+| v1.1 | 注入器打桩 + 改判 handler | 7.0 真机动态改判生效 |
 | v2.0 | 转场 seek-replay | 7.0 真机 seek 后音符重飞、计分复位 |
 | v2.1 | A-B 循环（转场机制，白闪帧为预期形态） | 7.0 真机 |
 | v3（可选） | 触摸注入/自动演奏（旧桩点 #3 路线） | 待定 |

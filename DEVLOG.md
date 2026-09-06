@@ -2,6 +2,13 @@
 
 ArcDemo 演进记录。能力状态标记与 [xrc 能力账本](../../research/notes/xrc-arcaea-capability-ledger-2026-08-31.md) 对齐（XRC-R 运行中 / XRC-V 已验证 / XRC-S 静态闭环 / PROTO 失败原型 / OPEN 未闭合）。
 
+## 2026-09-06 — 基准切换：7.0.255（6.13 适配废弃）
+
+- 6.13 适配废弃：删除 `include/ArcOffsets.h`（git 历史保留）；`XRCProfile.h` 单版本 7.0.255。
+- gp.update 重定位：GameScene vtable 槽 155 = `sub_100CA118C`（单参 `(GameScene*)`；内含 HUD syncer 调用 `0x100ca368c`）。谱面变速 hook 点就绪，待真机验证。
+- 音频链决策：不 hook FMOD/音频链。seek 与进度条在 7.0 降级为"未就绪"（UI 禁用，谱面钟平移保留、音频不动）。若日后恢复，先重定位 6.13 的四个锚点（get_registry/get_current_sound/get_sound_length/ch_get_position）与 MTP vtable。
+- CI 三级缓存（Theos/SDK/ellekit）就绪并验证命中：重跑时 Clone Theos / Download SDK / Build ellekit 全部 skipped。
+
 ## 2026-09-06 — 架构收敛（v2 spec 定稿）
 
 决策（与 xrc 研究同步）：

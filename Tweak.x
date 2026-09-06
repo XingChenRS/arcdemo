@@ -158,10 +158,10 @@ uint64_t xrc_image_base(void) {
     [card addSubview:scope];
     y += 48;
 
-    BOOL playerReady = (xrc_player_get() != NULL);
+    BOOL playerReady = false;   // 7.0 决策：不 hook 音频链；进度条待音频链恢复后再启用
 
     UILabel *playerHdr = [[UILabel alloc] initWithFrame:CGRectMake(12, y, innerW, 18)];
-    playerHdr.text = playerReady ? @"Seek" : @"Seek (waiting for gameplay...)";
+    playerHdr.text = playerReady ? @"Seek" : @"Seek (audio chain not hooked)";
     playerHdr.font = [UIFont systemFontOfSize:13];
     playerHdr.textColor = [UIColor darkGrayColor];
     [card addSubview:playerHdr];
@@ -315,7 +315,7 @@ uint64_t xrc_image_base(void) {
     if (sl) {
         if (sl.maximumValue < (float)maxMs) sl.maximumValue = (float)maxMs;
         if (!self.userDraggingSlider) sl.value = (float)cur;
-        if (!sl.enabled && xrc_player_get()) sl.enabled = YES;
+        // 音频链未就绪（7.0）：进度条保持禁用，不自动启用
     }
     if (lbl) {
         uint32_t cs = cur / 1000u, ms = cur % 1000u;
