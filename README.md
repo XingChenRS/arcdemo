@@ -24,7 +24,7 @@ Arcaea iOS 侧载 dylib：练习向运行时插件。xrc 工作区 `projects/run
 |---|---|---|---|
 | 谱面时间变速（GameScene vtable 槽 155 hook） | **XRC-R/重定位** | iOS 7.0.255 | vtable 槽已定（`sub_100CA118C`），待真机验证 |
 | 视觉变速（fishhook gettimeofday） | **XRC-R** | iOS 7.0.255 | 无地址依赖，直接沿用 |
-| 基础 seek（音频 + 谱面钟平移） | **降级** | iOS 7.0.255 | 音频链决策不 hook（见 DEVLOG）；谱面钟平移保留，音频不动 |
+| 基础 seek（音频 + 谱面钟平移） | **XRC-R/重定位** | iOS 7.0.255 | MTP vtable/getpos/seek/getPosition/getCurrentSound 已重定位；get_sound_length 未定位（进度条用 max_seen 兜底） |
 | 悬浮 UI / plist 配置 / 文件日志 | **XRC-R** | iOS 7.0.255 | `Documents/xrc-arcdemo.plist` |
 | 判定窗口参数 UI | **XRC-R/仅配置** | iOS 7.0.255 | 保存 Max/Pure/Far/Lost 四项，等待桩点 handler 生效 |
 | **动态改判（桩点+slot）** | **OPEN→实施中** | iOS 7.0.255 | 收敛架构 v1.1：桩点 `sub_1009D9ED8`（ABI 已确认），注入器待打桩 |

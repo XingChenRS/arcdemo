@@ -136,11 +136,11 @@ void xrc_gameplay_install_hooks(uint64_t image_base) {
     });
 }
 
-// ---- seek（7.0 音频链未就绪时降级）----
+// ---- seek（音频链可用时走完整路径；7.0 getpos/getCurrentSound 已重定位）----
 void xrc_seek_ms(uint32_t ms) {
     void *player = xrc_player_get();
     if (!player) {
-        // 音频链未就绪（7.0 决策：不 hook FMOD）。仅做谱面钟平移，音频不动。
+        // 谱面钟平移仍然保留（无音频时谱面可跳）
         void *gp = atomic_load(&xrc_gp_instance);
         if (gp) {
             void *note_group = *(void **)((char *)gp + XRC_GP_NOTEGROUP_OFF);

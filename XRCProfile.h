@@ -49,18 +49,18 @@
 #define XRC_TRANSITION_FLAG_OFF     1144  // a2=1 转场标志
 #define XRC_RESUME_POS_OFF          1140  // 新场景恢复位置（ms）
 
-// ---------------- 音频链（seek/进度） ----------------
-// 决策（2026-09-06）：不 hook FMOD/音频链，seek 与进度条在 7.0 降级为未就绪。
-// 谱面/视觉变速与改判不受影响。若日后恢复音频 seek，先重定位以下四个
-// 6.13 锚点（get_registry/get_current_sound/get_sound_length/ch_get_position）
-// 与 MTP vtable，再填此表。
-#define XRC_OFF_GET_REGISTRY        0
-#define XRC_OFF_GET_CURRENT_SOUND   0
-#define XRC_OFF_GET_SOUND_LENGTH    0
-#define XRC_OFF_CH_GET_POSITION     0
-#define XRC_OFF_MTP_VTABLE          0
-#define XRC_OFF_MTP_GETPOS          0
-#define XRC_PLAYER_SEEK_SLOT_OFF    (0x40)
-#define XRC_REG_PLAYER_OFF          (8)
-#define XRC_PLAYER_CHANNELS_OFF     (0x38)
-#define XRC_CHANNEL_ENTRY_PTR_OFF   (8)
+// ---------------- 音频链（seek/进度条） ----------------
+// 出处: 2026-09-06 重定位（研究笔记 ios-7.0.255-replay-chain.md 未含本段，
+// 锚点链：6.13 RTTI 名 20AudioProviderFMODiOS → 7.0 typeinfo 0x1014B7690
+// → MTP vtable 0x1014B75B0；getpos 槽 7 与 seek 槽 8 形状与 6.13 逐条一致）
+// 决策：不 hook FMOD 变速；只读位置 + seekTo。
+#define XRC_OFF_MTP_VTABLE           (0x4B75B0ULL)    // 绝对 VA 0x1014B75B0
+#define XRC_OFF_MTP_GETPOS           (0x8E24F0ULL)    // vtable 槽 7，形状同 6.13
+#define XRC_PLAYER_SEEK_SLOT_OFF     (0x40)           // vtable 槽 8，形状同 6.13
+#define XRC_OFF_CH_GET_POSITION      (0x1033BBCULL)   // Channel::getPosition（内层同源）
+#define XRC_OFF_GET_CURRENT_SOUND    (0x103415CULL)   // Channel::getCurrentSound（日志串已验）
+#define XRC_OFF_GET_SOUND_LENGTH     0   // 未定位（进度条用 max_seen 兜底；P1 补）
+#define XRC_OFF_GET_REGISTRY         0   // 不再需要：getpos hook 直接缓存 player 实例
+#define XRC_REG_PLAYER_OFF           (8)
+#define XRC_PLAYER_CHANNELS_OFF      (0x38)
+#define XRC_CHANNEL_ENTRY_PTR_OFF    (8)

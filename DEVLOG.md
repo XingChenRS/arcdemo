@@ -2,6 +2,13 @@
 
 ArcDemo 演进记录。能力状态标记与 [xrc 能力账本](../../research/notes/xrc-arcaea-capability-ledger-2026-08-31.md) 对齐（XRC-R 运行中 / XRC-V 已验证 / XRC-S 静态闭环 / PROTO 失败原型 / OPEN 未闭合）。
 
+## 2026-09-06 — 音频链重定位（seek/进度条恢复）
+
+- MTP vtable = `0x1014B75B0`（RTTI 名 `20AudioProviderFMODiOS` 经 typeinfo `0x1014B7690` 验证）；getpos 槽 7 = `sub_1008E24F0`、seek 槽 8 = `sub_1008E253C`（形状与 6.13 逐条一致）。
+- `Channel::getPosition` 内层 = `sub_101033BBC`；`Channel::getCurrentSound` = `sub_10103415C`（日志串 "Channel::getCurrentSound" 已验）。
+- get_sound_length / registry 不追：进度条用 max_seen 兜底；player 实例由 getpos hook 直接缓存（不需要 registry 单例）。
+- 决策确认：不 hook FMOD 变速（音画同步已 DNR），只做读位置 + seekTo——与 6.13 同做法。
+
 ## 2026-09-06 — 基准切换：7.0.255（6.13 适配废弃）
 
 - 6.13 适配废弃：删除 `include/ArcOffsets.h`（git 历史保留）；`XRCProfile.h` 单版本 7.0.255。
