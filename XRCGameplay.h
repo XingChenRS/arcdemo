@@ -15,6 +15,9 @@ void xrc_gameplay_install_hooks(uint64_t image_base);
 // gp.update 替换实现（self = GameScene；7.0 五参，同 6.13）。
 void xrc_gameplay_update(void *self, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5);
 
+// 当前 gameplay 实例（gp.update hook 缓存；Tweak.x 转场/循环用）。
+extern _Atomic(void *) xrc_gp_instance;
+
 // seek：音频 seek + 谱面钟平移（6.13 已验证语义）。
 void xrc_seek_ms(uint32_t ms);
 

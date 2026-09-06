@@ -94,17 +94,43 @@ uint32_t xrc_player_position_ms(void) {
 }
 
 void xrc_player_try_capture_length(void *player) {
-    if (!player || !s_get_current_sound || !s_get_sound_length) return;
+    if (!player) return;
     if (atomic_load(&s_song_len_ms) != 0) return;
     void *channels = *(void **)((char *)player + XRC_PLAYER_CHANNELS_OFF);
     if (!channels) return;
     void *ch0 = *(void **)((char *)channels + XRC_CHANNEL_ENTRY_PTR_OFF);
     if (!ch0) return;
     void *snd = NULL;
+    if (!s_get_current_sound) return;
     if (s_get_current_sound(ch0, &snd) != 0 || !snd) return;
     uint32_t len = 0;
-    if (s_get_sound_length(snd, &len, 1) == 0 && len > 0 && len < 0x7FFFFFFFu) {
+    if (s_get_sound_length && s_get_sound_length(snd, &len, 1) == 0 &&
+        len > 0 && len < 0x7FFFFFFFu) {
         atomic_store(&s_song_len_ms, len);
+        return;
+    }
+    // 静态 get_sound_length 未定位 → 运行时 vtable 尝试
+    // （6.13 已验证 Sound 对象 vtable 槽 19 = getLength(sound, out, unit)）
+    void **svt = *(void ***)snd;
+    if (!svt) return;
+    typedef int (*sound_len_fn)(void *, uint32_t *, int);
+    sound_len_fn fn = (sound_len_fn)svt[19];
+    if (fn && fn(snd, &len, 1) == 0 && len > 0 && len < 0x7FFFFFFFu)
+        atomic_store(&s_song_len_ms, len);
+}
+
+// 位置轮询兜底：channel 0 的 get_position（getpos hook 不频繁触发时的补充）
+void xrc_player_poll_position(void *player) {
+    if (!player || !s_ch_get_position) return;
+    void *channels = *(void **)((char *)player + XRC_PLAYER_CHANNELS_OFF);
+    if (!channels) return;
+    void *ch0 = *(void **)((char *)channels + XRC_CHANNEL_ENTRY_PTR_OFF);
+    if (!ch0) return;
+    uint32_t pos = 0;
+    if (s_ch_get_position(ch0, &pos, 1) == 0) {
+        atomic_store(&s_last_pos_ms, pos);
+        uint32_t prev = atomic_load(&s_max_seen_ms);
+        if (pos > prev) atomic_store(&s_max_seen_ms, pos);
     }
 }
 

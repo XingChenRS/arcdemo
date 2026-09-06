@@ -290,6 +290,17 @@ uint64_t xrc_image_base(void) {
     [card addSubview:addBtn];
     y += 40;
 
+#if XRC_HAS_TRANSITION
+    // A-B 循环练习（v2.1：到 B 自动转场回 A，白闪帧为预期形态）
+    UIButton *loopBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    loopBtn.frame = CGRectMake(12, y, innerW, 32);
+    [loopBtn setTitle:xrc_loop_get_enabled() ? @"A-B Loop: ON (tap to off)" : @"A-B Loop: OFF (tap = set A, tap again = set B)"
+              forState:UIControlStateNormal];
+    [loopBtn addTarget:self action:@selector(loopTapped:) forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:loopBtn];
+    y += 40;
+#endif
+
     UIButton *closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     closeBtn.frame = CGRectMake(12, y, innerW, 32);
     [closeBtn setTitle:@"Close" forState:UIControlStateNormal];
@@ -305,6 +316,13 @@ uint64_t xrc_image_base(void) {
 - (void)sliderTouchUp:(UISlider *)s {
     self.userDraggingSlider = NO;
     xrc_seek_ms((uint32_t)s.value);
+#if XRC_HAS_TRANSITION
+    // seek-replay：谱面钟已平移到目标位置，带进度转场重开场景
+    // （游戏自拆建：跳过 T 前音符、计分复位——v2.0 机制，白闪帧为预期形态）
+    void *gp = atomic_load(&xrc_gp_instance);
+    if (gp && xrc_transition_resume(gp, true))
+        acc_flog(@"transition resume after seek");
+#endif
 }
 
 - (void)progressTick:(NSTimer *)t {
@@ -349,6 +367,10 @@ uint64_t xrc_image_base(void) {
     xrc_config_save(&g_cfg);
     xrc_judge_set_windows(g_cfg.judge_max_ms, g_cfg.judge_pure_ms,
                           g_cfg.judge_far_ms, g_cfg.judge_lost_ms);
+    // 缩放 = 四档之和 / 默认 270（25+50+100+120）
+    float scale = (g_cfg.judge_max_ms + g_cfg.judge_pure_ms +
+                   g_cfg.judge_far_ms + g_cfg.judge_lost_ms) / 270.0f;
+    xrc_judge_set_scale(scale);
     if (g_cfg.toast) {
         [WHToast showMessage:[NSString stringWithFormat:@"Judgement params saved: +/- %d/%d/%d/%d",
                               g_cfg.judge_max_ms, g_cfg.judge_pure_ms,
@@ -400,6 +422,32 @@ uint64_t xrc_image_base(void) {
     xrc_config_load(&g_cfg);
     [self rebuild];
 }
+
+#if XRC_HAS_TRANSITION
+static uint32_t s_loop_pending_a = 0;   // 第一次点击暂存的 A
+- (void)loopTapped:(UIButton *)b {
+    uint32_t pos = xrc_player_position_ms();
+    if (xrc_loop_get_enabled()) {
+        xrc_loop_set_range(0, 0);   // 关闭
+        s_loop_pending_a = 0;
+        if (g_cfg.toast) [WHToast showMessage:@"A-B loop off" duration:0.5 finishHandler:^{}];
+    } else if (s_loop_pending_a == 0) {
+        // 第一次点击 = 设 A（当前进度，回退 2 秒给准备时间）
+        s_loop_pending_a = pos > 2000 ? pos - 2000 : 0;
+        if (g_cfg.toast) [WHToast showMessage:@"Loop A set — tap again for B" duration:0.8 finishHandler:^{}];
+    } else {
+        // 第二次点击 = 设 B（当前进度），启用循环
+        if (pos > s_loop_pending_a + 1000) {
+            xrc_loop_set_range(s_loop_pending_a, pos);
+            s_loop_pending_a = 0;
+            if (g_cfg.toast) [WHToast showMessage:@"A-B loop on" duration:0.5 finishHandler:^{}];
+        } else {
+            if (g_cfg.toast) [WHToast showMessage:@"B must be after A" duration:0.5 finishHandler:^{}];
+        }
+    }
+    [self rebuild];
+}
+#endif
 
 // UITextFieldDelegate
 - (void)textFieldDidEndEditing:(UITextField *)tf {
@@ -537,7 +585,10 @@ static void doBootstrap(void) {
             if (xrc_player_detect_change(p)) {
                 acc_flog(@"new song: player=%p", p);
             }
-            if (p) xrc_player_try_capture_length(p);
+            if (p) {
+                xrc_player_try_capture_length(p);
+                xrc_player_poll_position(p);   // 位置兜底（getpos hook 不频繁触发）
+            }
         }];
         acc_flog(@"doBootstrap done");
     });
@@ -571,6 +622,9 @@ static void onAppLaunched(CFNotificationCenterRef center, void *observer,
     @try {
         xrc_judge_set_windows(g_cfg.judge_max_ms, g_cfg.judge_pure_ms,
                               g_cfg.judge_far_ms, g_cfg.judge_lost_ms);
+        float scale = (g_cfg.judge_max_ms + g_cfg.judge_pure_ms +
+                       g_cfg.judge_far_ms + g_cfg.judge_lost_ms) / 270.0f;
+        xrc_judge_set_scale(scale);
     } @catch (NSException *e) {}
     CFNotificationCenterAddObserver(CFNotificationCenterGetLocalCenter(), NULL,
         onAppLaunched,

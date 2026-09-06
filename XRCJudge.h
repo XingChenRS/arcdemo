@@ -12,3 +12,7 @@ void xrc_judge_set_windows(int max_ms, int pure_ms, int far_ms, int lost_ms);
 
 // 当前生效窗口（UI 显示用）。
 void xrc_judge_get_windows(int *max_ms, int *pure_ms, int *far_ms, int *lost_ms);
+
+// 窗口缩放（handler 生效路径）：scale = 四档之和 / 270.0（默认 1.0）。
+void xrc_judge_set_scale(float scale);
+float xrc_judge_get_scale(void);

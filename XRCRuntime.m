@@ -14,16 +14,19 @@
 xrc_runtime_t g_xrc = {0};
 
 // 读主程序 __DATA 段的运行时 vm 范围（扫描边界，防止读到 perm=0 页）。
+// 注意：dyld 不改内存里的 load commands——segment vmaddr 仍是未 slide 的
+// 静态值，必须手动加 (base - 静态基址 0x100000000)。
 static bool s_data_segment_range(uint64_t image_base, uint64_t *start, uint64_t *end) {
     const struct mach_header_64 *hdr = (const struct mach_header_64 *)image_base;
     if (hdr->magic != MH_MAGIC_64) return false;
+    const uint64_t slide = image_base - 0x100000000ULL;
     const struct load_command *lc = (const struct load_command *)(hdr + 1);
     for (uint32_t i = 0; i < hdr->ncmds; i++) {
         if (lc->cmd == LC_SEGMENT_64) {
             const struct segment_command_64 *seg = (const struct segment_command_64 *)lc;
             if (strcmp(seg->segname, "__DATA") == 0) {
-                *start = seg->vmaddr;
-                *end = seg->vmaddr + seg->vmsize;
+                *start = seg->vmaddr + slide;
+                *end = seg->vmaddr + slide + seg->vmsize;
                 return true;
             }
         }

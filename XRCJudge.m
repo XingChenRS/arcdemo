@@ -16,19 +16,40 @@ static _Atomic(int) s_win_far  = 100;
 static _Atomic(int) s_win_lost = 120;
 
 // ---- 完全接管 handler（X0=note, X8=out）----
+// 7.0.255 窗口求值器输出语义（IDA 已确认）：*out = 单个 f32 窗口值（ms），
+// caller 把它加到特效时间基上（sub_100BB5508 L115 vadd_f32）。
+// handler 采用"缩放"路线：调原函数拿基准窗口 → 乘用户缩放 → 写回。
+// 无需复刻表 B（note 类型分派原函数自己做）。
 #if XRC_HAS_JUDGE_STUB
-// 原函数入口（安装时从 slot.orig 读）。handler 直通它 = 行为与未打桩完全一致。
+// 原函数入口（安装时从 g_xrc.judge_entry 取——运行时重定位值）。
 static uint64_t (*s_orig_judge)(uint64_t note, void *out) = NULL;
+static _Atomic(float) s_window_scale = 1.0f;
 
 static uint64_t s_xrc_judge_handler(uint64_t note, void *out) {
-    // 骨架：直通原函数（端到端验证桩通路，行为不变）。
-    // 窗口覆盖逻辑待表 B 消费格式解码（research/notes/ios-7.0.255-replay-chain.md §9）
-    // 后实现：配置 == 默认时直通；非默认时按 note 字段计算窗口写回 *out。
-    if (s_orig_judge) return s_orig_judge(note, out);
-    if (out) *(uint64_t *)out = 0;
-    return 0;
+    if (!s_orig_judge || !out) {
+        if (out) *(uint64_t *)out = 0;
+        return 0;
+    }
+    uint64_t r = s_orig_judge(note, out);
+    float scale = atomic_load(&s_window_scale);
+    if (scale < 0.999f || scale > 1.001f) {
+        float w = *(float *)out;
+        *(float *)out = w * scale;
+    }
+    return r;
 }
 #endif
+
+// 窗口缩放（由配置四档换算：scale = (max+pure+far+lost)/270.0，默认 25/50/100/120）
+void xrc_judge_set_scale(float scale) {
+    if (scale < 0.1f) scale = 0.1f;
+    if (scale > 5.0f) scale = 5.0f;
+    atomic_store(&s_window_scale, scale);
+}
+
+float xrc_judge_get_scale(void) {
+    return atomic_load(&s_window_scale);
+}
 
 bool xrc_judge_install(uint64_t image_base) {
 #if XRC_HAS_JUDGE_STUB
