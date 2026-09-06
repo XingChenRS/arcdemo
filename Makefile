@@ -6,6 +6,11 @@ ARCHS = arm64 arm64e
 LIBRARY_NAME = ArcDemo
 
 ArcDemo_FILES = Tweak.x
+ArcDemo_FILES += XRCClock.m
+ArcDemo_FILES += XRCPlayer.m
+ArcDemo_FILES += XRCGameplay.m
+ArcDemo_FILES += XRCJudge.m
+ArcDemo_FILES += XRCConfig.m
 ArcDemo_FILES += fishhook.c
 ArcDemo_FILES += WQSuspendView/SuspendView/SuspendView/WQSuspendView.m
 ArcDemo_FILES += $(wildcard WHToast/WHToast/*.m)
